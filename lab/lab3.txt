@@ -1,0 +1,31 @@
+Question 1
+The model was registered under the name food11 and MLflow gave it version 1. The model artifact inside the run is the actual model file saved from that specific training run, while the registered model gives the model a shared name and version in the Model Registry. This makes it easier to manage and use models later without depending directly on one run ID.
+
+Question 2
+MLflow replaced the old stages like Staging and Production with aliases, such as champion and challenger. A model is versioned separately from the training run so that different trained models can be managed under the same model name. An alias is more flexible because it can be moved from one model version to another without changing the version itself. For example, if I train a better model later, I can move the champion alias to the new version.
+
+Question 3
+I loaded the model using the MLflow model URI models:/food11@champion instead of pointing directly to a model file. This makes the serving code independent from the exact file location and exact model version. The champion alias points to the model version I want to serve. If I train a better model later, I can move the champion alias to the new version and the serving code can stay the same.
+
+Question 4
+The dependency files are copied before the source code so Docker can cache the dependency installation layer. If I only change something in serve.py, Docker can reuse the existing layer with all the installed packages instead of installing them again. This makes rebuilding the image much faster.
+
+Question 5
+My multi-stage image had a disk usage of around 2.01 GB, with a content size of around 430 MB. From docker history, the biggest layer was the copied virtual environment at around 1.44 GB, which contains packages such as PyTorch and MLflow. The source code itself was very small compared to the dependency layer. I have not built a separate single-stage version yet, so I cannot give an exact size difference without testing it.
+
+Question 6
+If I forget the .dockerignore file, Docker will send a lot more files during the build, so the build can become slower and the image can become bigger. In this project, folders like data, mlruns, .venv and .git are not needed inside the image.
+The data folder is especially large, so sending it to Docker would waste time and space. The local .venv folder could also cause problems because it was created on Windows, while the Docker container is using Linux. So copying that local environment into the image could break the build or make the container unusable.
+
+Question 7
+The container cannot use 127.0.0.1:5000 to reach the MLflow server on my computer because 127.0.0.1 inside Docker refers to the container itself. Since MLflow is running on the Windows host and not inside the container, the container needs another address to reach it.
+On Windows, host.docker.internal is a special hostname provided by Docker that points from the container back to the host machine. This is why I used MLFLOW_TRACKING_URI=http://host.docker.internal:5000 when starting the container. That allowed the API inside Docker to connect to the MLflow server running on Windows and load the food11 model using the champion alias.
+
+
+Question 8
+I stopped the previous container and started a new one from the same food11-api:latest image without rebuilding it. The API started again correctly and the health endpoint still returned status ok.
+This showed me that the serving code and Python dependencies are already included in the Docker image, so they do not need to be rebuilt every time. The actual model is loaded at runtime from MLflow using the food11 champion alias. This means the image contains the application, while the model is fetched when the container starts.
+
+Question 9
+The Dockerfile is versioned in Git, but the Docker image I built is only stored locally on my machine. Another machine, such as a CI runner or Kubernetes cluster, would not be able to pull this exact image yet. What is missing is pushing the image to a container registry such as Docker Hub or GitHub Container Registry.
+The image should also use a specific version tag instead of relying only on latest. This makes it possible to identify and deploy the exact same image that was tested. A digest can also be used to reference an exact immutable image.
